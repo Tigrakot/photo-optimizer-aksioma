@@ -117,7 +117,7 @@ export default async function handler(req, res) {
     console.log(`[OPTIMIZE] task=${taskId} found ${photos.length} photos`);
 
     // Стартовый комментарий — чтобы пользователь видел что бот включился
-    const startComment = await addComment(taskId, `⏳ Оптимизирую ${photos.length} фото...`);
+    const startComment = await addComment(taskId, `📦 Архивирую ${photos.length} фото...`);
 
     // 2. Скачиваем ВСЕ фото в память
     const photoBuffers = [];
@@ -278,7 +278,7 @@ export default async function handler(req, res) {
       const attachResult = await pyrusRequest(`/tasks/${taskId}/comments`, {
         method: 'POST',
         body: JSON.stringify({
-          text: '',
+          text: '.',  // минимальный комментарий — почти невидимый
           attachments: uploadedArchives.map(a => a.id),
         }),
       });
