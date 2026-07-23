@@ -240,7 +240,7 @@ export default async function handler(req, res) {
               + `• Время: ${((Date.now() - startTime) / 1000).toFixed(1)} сек`,
           attachments: uploadedArchives.map(a => a.id),
           field_updates: [
-            { code: archiveFieldCode, value: uploaded.id },  // просто строка guid
+            { code: archiveFieldCode, value: [uploaded.id] },  // array of guid strings
           ],
         }),
       });
