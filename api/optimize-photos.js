@@ -36,8 +36,16 @@ function getFieldIdsByCode(task) {
   const fieldsConfig = config[formId] || config[String(formId)];
 
   if (!fieldsConfig) {
-    console.warn(`[OPTIMIZE] No fields config for form ${formId}, falling back to defaults`);
-    return { photos: 83, archive: 84 };
+    // Универсальный дефолт — используем code (работает на любой форме)
+    console.log(`[OPTIMIZE] No fields config for form ${formId}, using default codes`);
+    const codeMap = {};
+    (task.fields || []).forEach(f => {
+      if (f.code) codeMap[f.code] = f.id;
+    });
+    return {
+      photos: codeMap['u_photo2_source'] || process.env.FIELD_PHOTOS_ID,
+      archive: codeMap['u_ne_source'] || process.env.FIELD_ARCHIVE_ID,
+    };
   }
 
   const fieldMap = {};
