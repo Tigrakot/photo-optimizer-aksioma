@@ -11,8 +11,8 @@
 import { pyrusRequest } from './_pyrus.js';
 
 const FIELDS = {
-  PHOTOS: 'u_photo2_source',     // code поля "Фото осмотра"
-  ARCHIVE: 'u_ne_source',          // code поля "НЭ"
+  PHOTOS: process.env.FIELD_PHOTOS_CODE || 'u_photo2_source',  // code поля с фото
+  ARCHIVE: process.env.FIELD_ARCHIVE_CODE || 'u_ne_source',    // code поля для архива
 };
 
 export default async function handler(req, res) {
