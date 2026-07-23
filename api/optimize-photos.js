@@ -483,7 +483,9 @@ async function addComment(taskId, text) {
 
 async function updateComment(taskId, commentId, text) {
   // No-op: больше не спамим промежуточными комментариями
-  console.log(`[PROGRESS] ${commentId || 'new'}: ${text}`);
+  // commentId может быть null (progressComment удалена) — игнорируем
+  if (!commentId) return null;
+  console.log(`[PROGRESS] ${commentId}: ${text}`);
   return null;
 }
 
