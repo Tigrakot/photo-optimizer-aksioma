@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Оптимизация фото осмотра</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      max-width: 480px;
+      width: 100%;
+      padding: 40px;
+      text-align: center;
+    }
+    .icon { font-size: 64px; margin-bottom: 16px; }
+    h1 { font-size: 24px; margin-bottom: 8px; color: #1a1a1a; }
+    .task-id { color: #888; font-size: 14px; margin-bottom: 24px; font-family: monospace; }
+    .info {
+      background: #f5f7fa;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 24px 0;
+      text-align: left;
+    }
+    .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+    .info-row .label { color: #666; }
+    .info-row .value { font-weight: 600; color: #1a1a1a; }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: transform 0.1s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-cancel {
+      background: transparent;
+      color: #888;
+      margin-top: 8px;
+      text-decoration: underline;
+      font-size: 14px;
+      width: 100%;
+      padding: 8px;
+      border: none;
+      cursor: pointer;
+    }
+    .status {
+      padding: 16px;
+      border-radius: 8px;
+      margin: 16px 0;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.processing { background: #fff4e6; color: #b45309; }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon" id="icon">📸</div>
+    <h1>Оптимизация фото осмотра</h1>
+    <div class="task-id" id="taskId">Задача #—</div>
+
+    <div id="infoBlock">
+      <div class="info" id="info">
+        <div class="info-row"><span class="label">Файловое поле:</span><span class="value" id="photoCount">—</span></div>
+        <div class="info-row"><span class="label">Исходный размер:</span><span class="value" id="originalSize">—</span></div>
+        <div class="info-row"><span class="label">Ожидаемая экономия:</span><span class="value" id="expectedSaving">~70%</span></div>
+      </div>
+      <p style="color: #666; font-size: 14px; margin-bottom: 16px;">
+        Фото будут:<br>
+        • сжаты в JPEG (качество 82)<br>
+        • уменьшены до 1920px по большей стороне<br>
+        • очищены от метаданных (GPS, EXIF)<br>
+        • упакованы в ZIP
+      </p>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <button class="btn" id="optimizeBtn">Оптимизировать</button>
+    <button class="btn-cancel" id="cancelBtn">Отмена</button>
+  </div>
+
+  <script>
+    const url = new URL(window.location.href);
+    const taskId = url.searchParams.get('task_id');
+    document.getElementById('taskId').textContent = `Задача #${taskId}`;
+
+    const btn = document.getElementById('optimizeBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const status = document.getElementById('status');
+    const icon = document.getElementById('icon');
+    const infoBlock = document.getElementById('infoBlock');
+
+    // Сначала загружаем инфо о задаче
+    fetch(`/api/task-info?task_id=${taskId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          showStatus('error', '❌ ' + data.error);
+          btn.disabled = true;
+          return;
+        }
+        if (data.photo_count !== undefined) {
+          document.getElementById('photoCount').textContent = `${data.photo_count} файл(ов)`;
+          document.getElementById('originalSize').textContent = data.total_size_str || '—';
+        }
+      })
+      .catch(err => {
+        showStatus('error', '❌ Не удалось получить информацию о задаче');
+        btn.disabled = true;
+      });
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      cancelBtn.style.display = 'none';
+      infoBlock.style.display = 'none';
+      icon.textContent = '⏳';
+      showStatus('processing', '<span class="spinner"></span> Оптимизирую фото... Это может занять 10-30 секунд.');
+
+      try {
+        const r = await fetch('/api/optimize-photos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id: parseInt(taskId) }),
+        });
+        const data = await r.json();
+
+        if (data.success) {
+          icon.textContent = '✅';
+          showStatus('success',
+            `<strong>Готово!</strong><br><br>` +
+            `📊 ${data.photos} фото сжато<br>` +
+            `💾 ${formatSize(data.original_size)} → ${formatSize(data.optimized_size)}<br>` +
+            `📉 Экономия: <strong>${data.saved_percent}%</strong><br>` +
+            `⏱ ${(data.duration_ms / 1000).toFixed(1)} сек<br><br>` +
+            `<em>Файл загружен в поле "НЭ" задачи в Pyrus.</em>`
+          );
+          btn.style.display = 'none';
+          cancelBtn.textContent = 'Закрыть';
+          cancelBtn.style.display = 'block';
+        } else {
+          icon.textContent = '❌';
+          showStatus('error', '❌ ' + (data.error || 'Неизвестная ошибка'));
+          btn.disabled = false;
+          cancelBtn.style.display = 'block';
+        }
+      } catch (err) {
+        icon.textContent = '❌';
+        showStatus('error', '❌ Ошибка сети: ' + err.message);
+        btn.disabled = false;
+        cancelBtn.style.display = 'block';
+      }
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      window.close();
+      // Если window.close() не сработал (некоторые браузеры)
+      setTimeout(() => {
+        document.body.innerHTML = '<div style="color:white;text-align:center;padding:40px;font-family:sans-serif">Можно закрыть эту вкладку</div>';
+      }, 100);
+    });
+
+    function showStatus(type, html) {
+      status.className = `status show ${type}`;
+      status.innerHTML = html;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes) return '0 B';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    }
+  </script>
+</body>
+</html>
