@@ -133,6 +133,17 @@ export default async function handler(req, res) {
       }
     }
 
+    // Если сумма фото < 20 MB — НЕ сжимаем картинки (чтобы не раздувать)
+    // Просто пакуем в ZIP (там работает DEFLATE, повторит сжатие)
+    const shouldOptimize = totalOriginalSize > 20 * 1024 * 1024;
+    console.log(`[OPTIMIZE] task=${taskId} total=${formatSize(totalOriginalSize)}, shouldOptimize=${shouldOptimize}`);
+
+    await updateComment(taskId, progressComment.id,
+      shouldOptimize
+        ? `⏳ Сжимаю ${photos.length} фото (${formatSize(totalOriginalSize)} > 20 MB)...`
+        : `⏳ Пакую ${photos.length} фото в архив (${formatSize(totalOriginalSize)} ≤ 20 MB)...`
+    );
+
     // 4. Адаптивное сжатие с несколькими проходами
     // Если после сжатия архив > TARGET_ZIP_SIZE, пробуем более агрессивные настройки
     let optimized = [];
@@ -140,33 +151,41 @@ export default async function handler(req, res) {
     let zipBuffer = null;
     let totalOptimizedSize = 0;
 
-    while (levelIndex < QUALITY_LEVELS.length + 1) {
-      const isLastPass = levelIndex === QUALITY_LEVELS.length;
-      const level = QUALITY_LEVELS[Math.min(levelIndex, QUALITY_LEVELS.length - 1)];
-
-      await updateComment(taskId, progressComment.id,
-        `⏳ Проход ${levelIndex + 1}: ${level.dimension || MIN_DIMENSION}px, q=${level.quality || MIN_QUALITY}...`
-      );
-
-      // Сжимаем все фото с текущими настройками
-      optimized = [];
-      totalOptimizedSize = 0;
+    // Если НЕ надо сжимать — сразу в ZIP без сжатия
+    if (!shouldOptimize) {
       for (const item of photoBuffers) {
-        try {
-          const isImage = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i.test(item.name);
-          if (isImage) {
-            const buf = await optimizeImage(item.original, level.dimension, level.quality);
-            const newName = item.name.replace(/\.(png|webp|heic|heif|tiff?)$/i, '.jpg');
-            optimized.push({ name: newName, buffer: buf });
-            totalOptimizedSize += buf.length;
-          } else {
-            optimized.push({ name: item.name, buffer: item.original });
-            totalOptimizedSize += item.original.length;
-          }
-        } catch (err) {
-          console.error(`[OPTIMIZE] ${item.name} failed:`, err.message);
-        }
+        optimized.push({ name: item.name, buffer: item.original });
+        totalOptimizedSize += item.original.length;
       }
+    } else {
+      // Иначе — несколько проходов сжатия
+      while (levelIndex < QUALITY_LEVELS.length + 1) {
+        const isLastPass = levelIndex === QUALITY_LEVELS.length;
+        const level = QUALITY_LEVELS[Math.min(levelIndex, QUALITY_LEVELS.length - 1)];
+
+        await updateComment(taskId, progressComment.id,
+          `⏳ Проход ${levelIndex + 1}: ${level.dimension || MIN_DIMENSION}px, q=${level.quality || MIN_QUALITY}...`
+        );
+
+        // Сжимаем все фото с текущими настройками
+        optimized = [];
+        totalOptimizedSize = 0;
+        for (const item of photoBuffers) {
+          try {
+            const isImage = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i.test(item.name);
+            if (isImage) {
+              const buf = await optimizeImage(item.original, level.dimension, level.quality);
+              const newName = item.name.replace(/\.(png|webp|heic|heif|tiff?)$/i, '.jpg');
+              optimized.push({ name: newName, buffer: buf });
+              totalOptimizedSize += buf.length;
+            } else {
+              optimized.push({ name: item.name, buffer: item.original });
+              totalOptimizedSize += item.original.length;
+            }
+          } catch (err) {
+            console.error(`[OPTIMIZE] ${item.name} failed:`, err.message);
+          }
+        }
 
       // Пакуем в zip
       const zip = new JSZip();
@@ -194,6 +213,18 @@ export default async function handler(req, res) {
 
       levelIndex++;
     }
+    }  // end else (shouldOptimize)
+
+    // Пакуем финальный архив
+    const zip = new JSZip();
+    for (const item of optimized) {
+      zip.file(item.name, item.buffer);
+    }
+    zipBuffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
 
     console.log(`[OPTIMIZE] task=${taskId} final zip size: ${zipBuffer.length} bytes (${(zipBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
