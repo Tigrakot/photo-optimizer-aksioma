@@ -317,18 +317,6 @@ export default async function handler(req, res) {
 
     console.log(`[OPTIMIZE] task=${taskId} all done, returning response`);
 
-    // Отправляем финальный коммент с результатом (на случай если предыдущий упал)
-    try {
-      await pyrusRequest(`/tasks/${taskId}/comments`, {
-        method: 'POST',
-        body: JSON.stringify({
-          text: `✅ Готово (через res.json):\n• ${photos.length} фото\n• ${formatSize(totalOriginalSize)} → ${formatSize(totalOptimizedSize + zipBuffer.length)}\n• Экономия ${((1 - (totalOptimizedSize + zipBuffer.length) / totalOriginalSize) * 100).toFixed(0)}%`,
-        }),
-      });
-    } catch (e) {
-      console.error('[OPTIMIZE] final tail comment failed:', e.message);
-    }
-
     return res.status(200).json({
       success: true,
       task_id: taskId,
