@@ -55,8 +55,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ skipped: 'no photos' });
     }
 
-    if (archive && Array.isArray(archive) && archive.length > 0) {
-      console.log(`[WEBHOOK] task=${taskId} already has archive, skip`);
+    // Проверяем есть ли уже архив от бота в поле НЭ
+    // Бот создаёт файлы с именем photo_archive_*.zip
+    const hasBotArchive = archive && Array.isArray(archive) && archive.some(f =>
+      f.name && /^photo_archive_.*\.zip$/i.test(f.name)
+    );
+    if (hasBotArchive) {
+      console.log(`[WEBHOOK] task=${taskId} already has bot archive, skip`);
       return res.status(200).json({ skipped: 'already archived' });
     }
 
