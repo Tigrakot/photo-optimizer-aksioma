@@ -237,22 +237,21 @@ export default async function handler(req, res) {
               + `• После сжатия: ${formatSize(totalOptimizedSize + zipBuffer.length)}\n`
               + `• Экономия: ${((1 - (totalOptimizedSize + zipBuffer.length) / totalOriginalSize) * 100).toFixed(0)}%\n`
               + `• Время: ${((Date.now() - startTime) / 1000).toFixed(1)} сек`,
-          attachments: uploadedArchives.map(a => a.id),  // все части как attachments
+          attachments: uploadedArchives.map(a => a.id),
           field_updates: [
-            // Привязываем основной архив к полю НЭ
             { code: archiveFieldCode, value: { guid: uploaded.id } },
           ],
         }),
       });
-      console.log(`[OPTIMIZE] task=${taskId} final comment OK, field bound. Response:`, JSON.stringify(finalResult).substring(0, 200));
+      console.log(`[OPTIMIZE] task=${taskId} final comment OK. Response:`, JSON.stringify(finalResult).substring(0, 200));
     } catch (commentErr) {
       console.error(`[OPTIMIZE] task=${taskId} final comment FAILED:`, commentErr.message);
-      // Пишем отдельный коммент с ошибкой
+      // Пишем отдельный коммент с полной ошибкой
       try {
         await pyrusRequest(`/tasks/${taskId}/comments`, {
           method: 'POST',
           body: JSON.stringify({
-            text: `⚠️ Ошибка при прикреплении архива к задаче: ${commentErr.message}\n\nАрхив загружен: ${uploadedArchives.map(a => a.name).join(', ')}`,
+            text: `❌ Ошибка при прикреплении архива к полю НЭ:\n\n${commentErr.message}\n\nАрхив загружен: ${uploadedArchives.map(a => a.name).join(', ')} (${uploadedArchives[0].id})`,
           }),
         });
       } catch (e) {
