@@ -227,6 +227,7 @@ export default async function handler(req, res) {
       : '';
 
     try {
+      // Подход 1: attachments + field_updates (может не работать)
       const finalResult = await pyrusRequest(`/tasks/${taskId}/comments`, {
         method: 'POST',
         body: JSON.stringify({
@@ -239,7 +240,7 @@ export default async function handler(req, res) {
               + `• Время: ${((Date.now() - startTime) / 1000).toFixed(1)} сек`,
           attachments: uploadedArchives.map(a => a.id),
           field_updates: [
-            { code: archiveFieldCode, value: { guid: uploaded.id } },
+            { code: archiveFieldCode, value: uploaded.id },  // просто строка guid
           ],
         }),
       });
