@@ -138,7 +138,7 @@ export default async function handler(req, res) {
     const shouldOptimize = totalOriginalSize > 20 * 1024 * 1024;
     console.log(`[OPTIMIZE] task=${taskId} total=${formatSize(totalOriginalSize)}, shouldOptimize=${shouldOptimize}`);
 
-    await updateComment(taskId, progressComment.id,
+    await updateComment(taskId, null,
       shouldOptimize
         ? `⏳ Сжимаю ${photos.length} фото (${formatSize(totalOriginalSize)} > 20 MB)...`
         : `⏳ Пакую ${photos.length} фото в архив (${formatSize(totalOriginalSize)} ≤ 20 MB)...`
@@ -163,7 +163,7 @@ export default async function handler(req, res) {
         const isLastPass = levelIndex === QUALITY_LEVELS.length;
         const level = QUALITY_LEVELS[Math.min(levelIndex, QUALITY_LEVELS.length - 1)];
 
-        await updateComment(taskId, progressComment.id,
+        await updateComment(taskId, null,
           `⏳ Проход ${levelIndex + 1}: ${level.dimension || MIN_DIMENSION}px, q=${level.quality || MIN_QUALITY}...`
         );
 
@@ -234,7 +234,7 @@ export default async function handler(req, res) {
     if (zipBuffer.length > PART_SIZE) {
       console.log(`[OPTIMIZE] Splitting archive into parts...`);
       archives = await splitZipBySize(optimized, PART_SIZE, (msg) =>
-        updateComment(taskId, progressComment.id, `⏳ ${msg}`)
+        updateComment(taskId, null, `⏳ ${msg}`)
       );
     }
 
@@ -242,7 +242,7 @@ export default async function handler(req, res) {
     const uploadedArchives = [];
     for (let i = 0; i < archives.length; i++) {
       const archive = archives[i];
-      await updateComment(taskId, progressComment.id, `⏳ Загружаю часть ${i + 1}/${archives.length}...`);
+      await updateComment(taskId, null, `⏳ Загружаю часть ${i + 1}/${archives.length}...`);
       console.log(`[OPTIMIZE] task=${taskId} uploading part ${i + 1}/${archives.length} (${archive.buffer.length} bytes)`);
       try {
         const uploaded = await uploadPyrusFile(archive.name, archive.buffer);
