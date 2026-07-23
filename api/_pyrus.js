@@ -45,6 +45,9 @@ export async function pyrusRequest(path, options = {}) {
     },
   });
   const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Pyrus API ${response.status}: ${text.substring(0, 300)}`);
+  }
   if (!text) return {};
   try {
     return JSON.parse(text);
