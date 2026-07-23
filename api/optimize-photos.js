@@ -272,7 +272,8 @@ export default async function handler(req, res) {
           method: 'POST',
           body: JSON.stringify({
             field_updates: [
-              { code: archiveFieldCode, value: attachmentIds.map(id => ({ id })) },
+              // Pyrus API для file-поля: value = [{ attachment_id: ... }] или [{ guid: ... }]
+              { code: archiveFieldCode, value: attachmentIds.map(id => ({ attachment_id: id })) },
             ],
           }),
         });
