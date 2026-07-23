@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 
 import optimizePhotosHandler from './api/optimize-photos.js';
 import taskInfoHandler from './api/task-info.js';
+import pyrusWebhookHandler from './api/pyrus-webhook.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,7 @@ app.get('/', (req, res) => {
 // API endpoints
 app.all('/api/optimize-photos', (req, res) => optimizePhotosHandler(req, res));
 app.all('/api/task-info', (req, res) => taskInfoHandler(req, res));
+app.all('/api/pyrus-webhook', (req, res) => pyrusWebhookHandler(req, res));
 
 // Fallback
 app.use((req, res) => {
