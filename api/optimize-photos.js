@@ -226,9 +226,15 @@ export default async function handler(req, res) {
       ? `\n📦 Разбито на ${uploadedArchives.length} частей`
       : '';
 
+    // Двухшаговый процесс:
+    // 1. Прикрепить архив через attachments в комменте (получить attachment id)
+    // 2. Использовать этот id в field_updates для привязки к полю
+
+    let attachmentIds = [];
+
+    // Шаг 1: прикрепляем архив
     try {
-      // Подход 1: attachments + field_updates (может не работать)
-      const finalResult = await pyrusRequest(`/tasks/${taskId}/comments`, {
+      const attachResult = await pyrusRequest(`/tasks/${taskId}/comments`, {
         method: 'POST',
         body: JSON.stringify({
           text: `📦 Архив готов!${partsInfo}\n\n`
@@ -239,24 +245,46 @@ export default async function handler(req, res) {
               + `• Экономия: ${((1 - (totalOptimizedSize + zipBuffer.length) / totalOriginalSize) * 100).toFixed(0)}%\n`
               + `• Время: ${((Date.now() - startTime) / 1000).toFixed(1)} сек`,
           attachments: uploadedArchives.map(a => a.id),
-          field_updates: [
-            { code: archiveFieldCode, value: [uploaded.id] },  // array of guid strings
-          ],
         }),
       });
-      console.log(`[OPTIMIZE] task=${taskId} final comment OK. Response:`, JSON.stringify(finalResult).substring(0, 200));
-    } catch (commentErr) {
-      console.error(`[OPTIMIZE] task=${taskId} final comment FAILED:`, commentErr.message);
-      // Пишем отдельный коммент с полной ошибкой
+
+      // Достаём id вложений из ответа
+      const task = attachResult.task || attachResult;
+      const lastComment = (task.comments || []).slice(-1)[0];
+      if (lastComment && lastComment.attachments) {
+        attachmentIds = lastComment.attachments.map(a => a.id);
+        console.log(`[OPTIMIZE] task=${taskId} attached, got ids:`, attachmentIds);
+      }
+    } catch (attachErr) {
+      console.error(`[OPTIMIZE] task=${taskId} attach FAILED:`, attachErr.message);
+      await pyrusRequest(`/tasks/${taskId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          text: `❌ Ошибка при прикреплении архива:\n\n${attachErr.message}\n\nGUID: ${uploaded.id}`,
+        }),
+      });
+    }
+
+    // Шаг 2: привязываем к полю "НЭ" (если получили attachment ids)
+    if (attachmentIds.length > 0) {
       try {
+        const updateResult = await pyrusRequest(`/tasks/${taskId}/comments`, {
+          method: 'POST',
+          body: JSON.stringify({
+            field_updates: [
+              { code: archiveFieldCode, value: attachmentIds.map(id => ({ id })) },
+            ],
+          }),
+        });
+        console.log(`[OPTIMIZE] task=${taskId} field updated OK. Response:`, JSON.stringify(updateResult).substring(0, 200));
+      } catch (updateErr) {
+        console.error(`[OPTIMIZE] task=${taskId} field update FAILED:`, updateErr.message);
         await pyrusRequest(`/tasks/${taskId}/comments`, {
           method: 'POST',
           body: JSON.stringify({
-            text: `❌ Ошибка при прикреплении архива к полю НЭ:\n\n${commentErr.message}\n\nАрхив загружен: ${uploadedArchives.map(a => a.name).join(', ')} (${uploadedArchives[0].id})`,
+            text: `⚠️ Архив прикреплён, но не привязан к полю НЭ:\n\n${updateErr.message}\n\nIDs: ${attachmentIds.join(', ')}`,
           }),
         });
-      } catch (e) {
-        console.error('[OPTIMIZE] could not post error comment:', e.message);
       }
     }
 
