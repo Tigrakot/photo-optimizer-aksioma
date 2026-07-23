@@ -336,18 +336,6 @@ export default async function handler(req, res) {
       } catch (e) {}
     }
 
-    // Шаг 3: удаляем технический комментарий с архивом
-    if (technicalCommentId) {
-      try {
-        await pyrusRequest(`/tasks/${taskId}/comments/${technicalCommentId}`, {
-          method: 'DELETE',
-        });
-        console.log(`[OPTIMIZE] task=${taskId} deleted technical comment ${technicalCommentId}`);
-      } catch (delErr) {
-        console.warn(`[OPTIMIZE] task=${taskId} could not delete technical comment:`, delErr.message);
-      }
-    }
-
     // Удаляем стартовый комментарий "⏳ Оптимизирую..." (если он есть)
     if (startComment && startComment.id) {
       try {
