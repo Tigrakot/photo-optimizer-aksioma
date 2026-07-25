@@ -16,6 +16,11 @@ const FIELD_PAIRS = [
   { inputCode: 'u_photo3_source', outputCode: 'u_ne2_source', label: 'доп. осмотр' },
 ];
 
+// Защита от обработки старых задач
+const MAX_TASK_AGE_DAYS = parseInt(process.env.MAX_TASK_AGE_DAYS || '30', 10);
+// Защита: если в поле-результате уже есть ЛЮБОЙ файл — пропускаем (не наша забота)
+const SKIP_IF_ARCHIVE_FIELD_NON_EMPTY = process.env.SKIP_IF_ARCHIVE_FIELD_NON_EMPTY !== 'false';
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'ok', service: 'pyrus-webhook' });
@@ -47,6 +52,15 @@ export default async function handler(req, res) {
     const fieldMap = {};
     (task.fields || []).forEach(f => { fieldMap[f.code || f.id] = f.value; });
 
+    // Защита 1: не обрабатывать задачи старше MAX_TASK_AGE_DAYS дней
+    const createDate = new Date(task.create_date);
+    const ageMs = Date.now() - createDate.getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    if (ageDays > MAX_TASK_AGE_DAYS) {
+      console.log(`[WEBHOOK] task=${taskId} too old (${ageDays.toFixed(1)} days > ${MAX_TASK_AGE_DAYS}), skip`);
+      return res.status(200).json({ skipped: 'too old' });
+    }
+
     // Проверяем: есть ли хотя бы в одной паре фото, и нет ли архивов бота
     let hasAnyPhotos = false;
     let hasAnyBotArchive = false;
@@ -70,6 +84,22 @@ export default async function handler(req, res) {
     if (!hasAnyPhotos) {
       console.log(`[WEBHOOK] task=${taskId} no photos in any field, skip`);
       return res.status(200).json({ skipped: 'no photos' });
+    }
+
+    // Защита 2: если в поле-результате уже есть ЛЮБЫЕ файлы (не наши) — не трогаем
+    if (SKIP_IF_ARCHIVE_FIELD_NON_EMPTY) {
+      let hasAnyFilesInResult = false;
+      for (const pair of FIELD_PAIRS) {
+        const archive = fieldMap[pair.outputCode];
+        if (archive && Array.isArray(archive) && archive.length > 0) {
+          hasAnyFilesInResult = true;
+          break;
+        }
+      }
+      if (hasAnyFilesInResult) {
+        console.log(`[WEBHOOK] task=${taskId} result field already has files (not bot's), skip`);
+        return res.status(200).json({ skipped: 'result field has files' });
+      }
     }
 
     // Если во ВСЕХ заполненных полях уже есть архивы бота — пропускаем
