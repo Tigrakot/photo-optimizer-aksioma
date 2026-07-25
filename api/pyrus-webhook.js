@@ -21,6 +21,12 @@ const MAX_TASK_AGE_DAYS = parseInt(process.env.MAX_TASK_AGE_DAYS || '30', 10);
 // Защита: если в поле-результате уже есть ЛЮБОЙ файл — пропускаем (не наша забота)
 const SKIP_IF_ARCHIVE_FIELD_NON_EMPTY = process.env.SKIP_IF_ARCHIVE_FIELD_NON_EMPTY !== 'false';
 
+// === Глобальная блокировка от race condition ===
+// Если webhook уже обрабатывает задачу — остальные получат 200 (skip)
+// и не будут плодить параллельные инвокации optimizeAsync
+const activeTasks = new Set();
+const TASK_LOCK_TTL_MS = 5 * 60 * 1000; // 5 мин максимум (защита от зависаний)
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'ok', service: 'pyrus-webhook' });
@@ -39,6 +45,14 @@ export default async function handler(req, res) {
   if (!taskId) {
     return res.status(400).json({ error: 'No task_id' });
   }
+
+  // Race condition защита: если уже обрабатываем эту задачу — пропускаем
+  if (activeTasks.has(taskId)) {
+    console.log(`[WEBHOOK] task=${taskId} already in progress, skip (race)`);
+    return res.status(200).json({ skipped: 'already processing' });
+  }
+  activeTasks.add(taskId);
+  setTimeout(() => activeTasks.delete(taskId), TASK_LOCK_TTL_MS); // автоснятие через 5 мин
 
   try {
     // Получаем задачу
@@ -126,9 +140,15 @@ export default async function handler(req, res) {
     console.log(`[WEBHOOK] task=${taskId} starting optimization`);
 
     // Запускаем оптимизацию асинхронно (Pyrus ждёт ответ 60 сек, оптимизация может быть дольше)
-    optimizeAsync(taskId).catch(err => {
-      console.error(`[WEBHOOK] optimize FAILED for task ${taskId}:`, err);
-    });
+    // Снимаем блокировку после завершения (успех или ошибка)
+    optimizeAsync(taskId)
+      .catch(err => {
+        console.error(`[WEBHOOK] optimize FAILED for task ${taskId}:`, err);
+      })
+      .finally(() => {
+        activeTasks.delete(taskId);
+        console.log(`[WEBHOOK] task=${taskId} lock released`);
+      });
 
     return res.status(200).json({ accepted: true, task_id: taskId });
   } catch (error) {
