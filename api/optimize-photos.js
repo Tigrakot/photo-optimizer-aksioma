@@ -132,10 +132,15 @@ export default async function handler(req, res) {
     }
 
     // Пишем финальный комментарий
+    // И сразу убираем себя из subscribers задачи — чтобы Pyrus не слал
+    // повторных webhook'ов (события task.moved, comment.added и т.д.)
     try {
       await pyrusRequest(`/tasks/${taskId}/comments`, {
         method: 'POST',
-        body: JSON.stringify({ text: finalText }),
+        body: JSON.stringify({
+          text: finalText,
+          subscribers_removed: [{ id: 1316834, type: 'bot' }],
+        }),
       });
     } catch (e) {
       console.error('[OPTIMIZE] final comment failed:', e.message);
