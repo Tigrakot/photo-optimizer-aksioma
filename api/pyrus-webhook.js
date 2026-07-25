@@ -36,11 +36,27 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Для bot webhook (step) Pyrus может слать другой формат. Главное — task_id
+  if (data && data.task) {
+    // Иногда данные внутри task
+    const innerTask = data.task;
+    if (!taskId && innerTask.id) {
+      req.body.task_id = innerTask.id;
+    }
+  }
+
   const data = req.body || {};
   const taskId = data.task_id || data.id;
   const event = data.event;
 
   console.log(`[WEBHOOK] event=${event} task=${taskId}`);
+
+  // Если это webhook от bot (задача попала в наш step) — событие может быть другим
+  // (Pyrus не всегда указывает event для bot webhook'ов)
+  // Проверяем наличие задачи и идём дальше
+  if (!event && taskId) {
+    console.log(`[WEBHOOK] no event but task=${taskId}, assuming bot step trigger`);
+  }
 
   if (!taskId) {
     return res.status(400).json({ error: 'No task_id' });
@@ -141,6 +157,11 @@ export default async function handler(req, res) {
 
     // Запускаем оптимизацию асинхронно (Pyrus ждёт ответ 60 сек, оптимизация может быть дольше)
     // Снимаем блокировку после завершения (успех или ошибка)
+    // + добавляем задачу в tracker для periodic poller (если фото загрузят после)
+    if (global.__trackTask) {
+      global.__trackTask(taskId);
+      console.log(`[WEBHOOK] task=${taskId} tracked for future polling`);
+    }
     optimizeAsync(taskId)
       .catch(err => {
         console.error(`[WEBHOOK] optimize FAILED for task ${taskId}:`, err);
