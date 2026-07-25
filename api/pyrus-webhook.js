@@ -86,19 +86,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ skipped: 'no photos' });
     }
 
-    // Защита 2: если в поле-результате уже есть ЛЮБЫЕ файлы (не наши) — не трогаем
+    // Защита 2: если в поле-результате конкретной пары уже есть ЛЮБЫЕ файлы — не трогаем ЭТУ пару
+    // (но другие пары могут быть пустыми и должны обрабатываться)
     if (SKIP_IF_ARCHIVE_FIELD_NON_EMPTY) {
-      let hasAnyFilesInResult = false;
       for (const pair of FIELD_PAIRS) {
+        const photos = fieldMap[pair.inputCode];
         const archive = fieldMap[pair.outputCode];
-        if (archive && Array.isArray(archive) && archive.length > 0) {
-          hasAnyFilesInResult = true;
-          break;
+        if (photos && Array.isArray(photos) && photos.length > 0) {
+          if (archive && Array.isArray(archive) && archive.length > 0) {
+            // Поле-результат занято — пропускаем только ЭТУ пару
+            console.log(`[WEBHOOK] pair ${pair.inputCode}: result field has files, will skip in handler`);
+            // Не выходим, просто помечаем (processFieldPair проверит ещё раз)
+          }
         }
-      }
-      if (hasAnyFilesInResult) {
-        console.log(`[WEBHOOK] task=${taskId} result field already has files (not bot's), skip`);
-        return res.status(200).json({ skipped: 'result field has files' });
       }
     }
 
