@@ -16,6 +16,28 @@
 
 import { pyrusRequest } from './_pyrus.js';
 
+// Дедупликация: Pyrus шлёт несколько webhook'ов на одно событие
+// (task.moved, task.commented, и т.д.). Если тот же task_id пришёл
+// в течение DEDUP_TTL_MS — пропускаем.
+const recentCalls = new Map(); // taskId → timestamp
+const DEDUP_TTL_MS = 5000; // 5 сек
+
+function isDuplicate(taskId) {
+  const now = Date.now();
+  const last = recentCalls.get(taskId);
+  if (last && (now - last) < DEDUP_TTL_MS) {
+    return true;
+  }
+  recentCalls.set(taskId, now);
+  // Чистим старые записи (чтобы Map не рос вечно)
+  if (recentCalls.size > 1000) {
+    for (const [k, t] of recentCalls) {
+      if (now - t > DEDUP_TTL_MS * 2) recentCalls.delete(k);
+    }
+  }
+  return false;
+}
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({ status: 'ok', service: 'pyrus-webhook' });
@@ -32,14 +54,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No task_id' });
   }
 
+  // Дедупликация
+  if (isDuplicate(taskId)) {
+    console.log(`[WEBHOOK] task=${taskId} duplicate, skip`);
+    return res.status(200).json({ skipped: 'duplicate' });
+  }
+
   console.log(`[WEBHOOK] task=${taskId} → start optimization`);
 
-  // Сразу отвечаем 200, обработка в фоне (Pyrus ждёт максимум 60 сек)
-  // На случай если кнопку нажмут несколько раз подряд — processFieldPair
-  // сам проверит архив в u_ne_source / u_ne2_source и не пересоберёт
   res.status(200).json({ accepted: true, task_id: taskId });
 
-  // Асинхронная обработка
   optimizeAsync(taskId).catch(err => {
     console.error(`[WEBHOOK] task=${taskId} FAILED:`, err);
   });
