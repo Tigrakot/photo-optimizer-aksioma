@@ -54,6 +54,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No task_id' });
   }
 
+  // Логируем полное тело webhook'а для отладки дублей
+  console.log(`[WEBHOOK] task=${taskId} BODY:`, JSON.stringify(data).substring(0, 800));
+
   // Дедупликация
   if (isDuplicate(taskId)) {
     console.log(`[WEBHOOK] task=${taskId} duplicate, skip`);
