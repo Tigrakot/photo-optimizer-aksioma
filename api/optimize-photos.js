@@ -91,55 +91,32 @@ export default async function handler(req, res) {
     // Стартовый комментарий
     const startComment = await addComment(taskId, `📦 Сканирую фото в задаче...`);
 
-    // 2. Для каждой пары полей — обрабатываем независимо
+    // 2. Обрабатываем пары последовательно:
+    // Сначала u_photo2_source → u_ne_source (первый осмотр)
+    // Если архив в u_ne_source уже есть → обрабатываем u_photo3_source → u_ne2_source
+    // Это позволяет сотруднику делать 2 нажатия кнопки:
+    //   1) для основного осмотра
+    //   2) для доп. осмотра (после загрузки фото)
     const results = [];
     for (const pair of FIELD_PAIRS) {
       const pairResult = await processFieldPair(task, taskId, pair, startTime);
       results.push(pairResult);
+      // Если первая пара уже заархивирована (пропущена) — продолжаем
+      // Если первая пара обработана — продолжаем
+      // Если архивов нет и фото нет — пропускаем всё
     }
 
-    // Финальный комментарий с общей статистикой
+    // Финальный комментарий — максимально короткий
     const processedPairs = results.filter(r => r.processed);
     const skippedPairs = results.filter(r => !r.processed);
 
     let finalText = '';
     if (processedPairs.length > 0) {
-      finalText += `📦 Готово! Обработано пар полей: ${processedPairs.length}\n\n`;
+      // Компактно: "Готово!" + название архива (без лишних деталей)
       for (const r of processedPairs) {
-        finalText += `▸ ${r.label} (${r.inputCode} → ${r.outputCode}):\n`;
-        finalText += `  • Фото: ${r.photos}\n`;
-        finalText += `  • Исходный: ${formatSize(r.originalSize)}\n`;
-        finalText += `  • Архив: ${formatSize(r.zipSize)}\n`;
-        finalText += `  • Экономия: ${r.savedPercent}%\n\n`;
+        const archiveName = r.zipName || `photo_archive_${r.label}_${new Date().toISOString().slice(0,10)}.zip`;
+        finalText += `📦 Готово! ${archiveName}\n`;
       }
-
-      // Предупреждение если были сплиты или архив близок к лимиту
-      const splitPairs = processedPairs.filter(r => r.parts && r.parts > 1);
-      const bigArchives = processedPairs.filter(r => r.zipSize > 18 * 1024 * 1024);
-      if (splitPairs.length > 0) {
-        finalText += `⚠️ Внимание: ${splitPairs.length} пар(ы) разбиты на несколько архивов.\n`;
-        for (const r of splitPairs) {
-          finalText += `  • ${r.label}: ${r.parts} части(ей) по ~18 МБ\n`;
-        }
-        finalText += `Это бывает при большом количестве фото высокого разрешения.\n`;
-        finalText += `Убедитесь, что получатели скачают все части.\n\n`;
-      } else if (bigArchives.length > 0) {
-        finalText += `⚠️ Внимание: архив близок к лимиту Pyrus (20 МБ).\n`;
-        finalText += `Если прикрепление не удастся — разобью на части автоматически.\n\n`;
-      }
-      if (skippedPairs.length > 0) {
-        finalText += `ℹ️ Пропущено:\n`;
-        for (const r of skippedPairs) {
-          const reason = r.skipped === 'already archived'
-            ? 'архив уже есть'
-            : r.skipped === 'no photos'
-            ? 'нет фото'
-            : 'поле не найдено';
-          finalText += `  • ${r.label} (${r.inputCode}): ${reason}\n`;
-        }
-        finalText += '\n';
-      }
-      finalText += `⏱ Общее время: ${((Date.now() - startTime) / 1000).toFixed(1)} сек`;
     } else {
       finalText = `ℹ️ Нет фото для обработки.`;
       if (skippedPairs.length > 0) {
@@ -328,7 +305,9 @@ async function processFieldPair(task, taskId, pair, startTime) {
   // 3. Сплит если > 18 MB
   const dateStr = new Date().toISOString().slice(0, 10);
   const labelAscii = transliterate(pair.label).replace(/\s+/g, '_');
-  let archives = [{ name: `photo_archive_${labelAscii}_${dateStr}.zip`, buffer: zipBuffer }];
+  const mainZipName = `photo_archive_${labelAscii}_${dateStr}.zip`;
+  result.zipName = mainZipName;
+  let archives = [{ name: mainZipName, buffer: zipBuffer }];
 
   if (zipBuffer.length > PART_SIZE) {
     archives = await splitZipBySize(optimized, PART_SIZE, labelAscii);
