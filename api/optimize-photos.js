@@ -335,6 +335,27 @@ async function processFieldPair(task, taskId, pair, startTime) {
   }
 
   // 4. Загружаем в Pyrus
+  // Перед загрузкой — повторная проверка (race condition защита):
+  // если другой инвокс бота уже загрузил архив — отменяем свой
+  try {
+    const recheckRes = await pyrusRequest(`/tasks/${taskId}`);
+    const recheckTask = recheckRes.task || recheckRes;
+    const recheckField = (recheckTask.fields || []).find(f => f.id === outputFieldId);
+    const recheckArchive = recheckField?.value;
+    if (recheckArchive && Array.isArray(recheckArchive) && recheckArchive.length > 0) {
+      const hasBotArchiveNow = recheckArchive.some(f =>
+        f.name && /^photo_archive_.*\.zip$/i.test(f.name)
+      );
+      if (hasBotArchiveNow) {
+        console.log(`[OPTIMIZE] pair ${pair.inputCode}: re-check found bot archive (race condition), aborting`);
+        result.skipped = 'already archived (race)';
+        return result;
+      }
+    }
+  } catch (e) {
+    console.warn(`[OPTIMIZE] pair ${pair.inputCode}: re-check failed:`, e.message);
+  }
+
   const uploadedArchives = [];
   for (let i = 0; i < archives.length; i++) {
     const archive = archives[i];
